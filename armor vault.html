@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Armor Vault · 環形戰衣展示庫</title>
+<style>
+  :root{--cyan:#00f3ff;--ink:#cfeff5}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#03060a;overflow:hidden;font-family:"Segoe UI","PingFang TC","Noto Sans TC",sans-serif;color:var(--ink)}
+  #app{position:fixed;inset:0;touch-action:none;cursor:grab}
+  #app.dragging{cursor:grabbing}
+  #app.hover{cursor:pointer}
+  canvas{display:block}
+  .hud{position:fixed;pointer-events:none;z-index:5}
+  #title{top:18px;left:20px;letter-spacing:.32em;font-size:12px;opacity:.9}
+  #title b{display:block;font-size:20px;letter-spacing:.22em;color:var(--cyan);text-shadow:0 0 12px rgba(0,243,255,.7);margin-bottom:4px;font-weight:600}
+  #hint{top:18px;right:20px;text-align:right;font-size:11px;line-height:1.7;opacity:.6;letter-spacing:.08em}
+  #info{left:50%;bottom:76px;transform:translate(-50%,20px);width:min(440px,calc(100vw - 32px));padding:14px 18px 16px;
+    border:1px solid rgba(0,243,255,.35);background:linear-gradient(180deg,rgba(4,20,28,.78),rgba(2,10,14,.88));
+    box-shadow:0 0 24px rgba(0,243,255,.18),inset 0 0 20px rgba(0,243,255,.06);backdrop-filter:blur(6px);
+    opacity:0;transition:opacity .45s,transform .45s}
+  #info.show{opacity:1;transform:translate(-50%,0)}
+  #info .code{font-size:11px;letter-spacing:.3em;color:var(--cyan);opacity:.8}
+  #info h2{font-size:20px;letter-spacing:.14em;margin:2px 0 6px;font-weight:600}
+  #info p{font-size:12.5px;line-height:1.6;opacity:.8;margin-bottom:10px}
+  .bar{display:flex;align-items:center;gap:10px;font-size:10.5px;letter-spacing:.18em;margin-top:5px}
+  .bar span{width:54px;opacity:.7}
+  .bar i{flex:1;height:4px;background:rgba(255,255,255,.1);position:relative;overflow:hidden}
+  .bar i::after{content:"";position:absolute;inset:0;width:var(--v);background:var(--c,var(--cyan));box-shadow:0 0 8px var(--c,var(--cyan))}
+  #nav{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;flex-wrap:nowrap;justify-content:center;gap:8px;z-index:6;width:min(820px,calc(100vw - 16px))}
+  #nav button{pointer-events:auto;width:48px;height:42px;border:1px solid rgba(0,243,255,.4);background:rgba(3,16,22,.7);color:var(--cyan);
+    font-size:16px;cursor:pointer;backdrop-filter:blur(4px);transition:.2s}
+  #nav button:hover{background:rgba(0,243,255,.18);box-shadow:0 0 14px rgba(0,243,255,.4)}
+  #nav .lbtn{flex:1 1 0;width:auto;min-width:0;display:flex;align-items:center;justify-content:center;gap:9px;padding:0 8px;font-size:12px;letter-spacing:.1em;white-space:nowrap}
+  .lt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.2}
+  .lt small{font-size:9px;opacity:.65;letter-spacing:.12em}
+  .lt b{font-weight:500;font-size:12px}
+  .pips{display:flex;gap:3px}
+  .pips i{width:7px;height:14px;background:rgba(0,243,255,.18);transition:.25s}
+  .pips i.on{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#03060a;z-index:20;
+    letter-spacing:.4em;font-size:12px;color:var(--cyan);transition:opacity .8s}
+  #loading.off{opacity:0;pointer-events:none}
+  @media(max-width:600px){#hint{display:none}}
+  @media(max-width:520px){
+    #nav{gap:6px}
+    #nav button{width:38px}
+    #nav{width:calc(100vw - 16px)}
+    #nav .lbtn{flex:1 1 0;min-width:0;padding:0 4px;gap:4px;letter-spacing:.02em}
+    .lt small{font-size:8px;letter-spacing:0}
+    .lt b{font-size:11px}
+    .pips{gap:2px}
+    .pips i{width:4px}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="hud" id="title"><b>ARMOR VAULT</b>環形戰衣展示庫</div>
+<div class="hud" id="hint">左右滑動 / ← → 旋轉機庫<br>點擊展示櫃拉近，左右滑動切換<br>下滑 / Esc 返回中央平台<br>雙指縮放 / 滾輪 / ↑ ↓ 拉進拉遠展示庫<br>L 平台 / J 斜角 / K 展示櫃 / H 展示庫燈光（或下方按鈕）</div>
+<div class="hud" id="info"><div class="code" id="iCode"></div><h2 id="iName"></h2><p id="iDesc"></p><div id="iBars"></div></div>
+<div id="nav">
+  <button class="lbtn" id="bLight" title="平台燈光（L）"><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lt"><small>平台燈光</small><b id="lName">明亮</b></span></button>
+  <button class="lbtn" id="bPanel" title="斜角燈光（J）"><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lt"><small>斜角燈光</small><b id="sName">明亮</b></span></button>
+  <button class="lbtn" id="bPod" title="展示櫃燈光（K）"><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lt"><small>展示櫃燈光</small><b id="pName">明亮</b></span></button>
+  <button class="lbtn" id="bHall" title="展示庫燈光（H）"><span class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span><span class="lt"><small>展示庫燈光</small><b id="hName">明亮</b></span></button>
+</div>
+<div id="loading">LOADING VAULT…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  if(typeof THREE==="undefined"){
+    document.getElementById("loading").textContent="無法載入 Three.js，請檢查網路連線";
+    return;
+  }
+  var TAU=Math.PI*2, CYAN=0x00f3ff;
+  var R=11;                       // 展示櫃所在圓弧半徑
+  var app=document.getElementById("app");
+
+  /* ---------- Renderer / Scene / Camera ---------- */
+  var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.2;
+  app.appendChild(renderer.domElement);
+
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x03060a);
+  scene.fog=new THREE.FogExp2(0x04080d,0.026);
+
+  var camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,120);
+  var ZDEF=11;   // 預設鏡頭距離（拉遠）
+  var camFree=new THREE.Vector3(0,3.6,ZDEF), lookFree=new THREE.Vector3(0,2.5,-9);
+  // 依螢幕寬高比調整視角，讓預設畫面剛好容納 3 個展示櫃（左右展示櫃外緣約 ±7.6）
+  function fitFov(){
+    var a=innerWidth/innerHeight;
+    var vHalf=Math.atan(Math.tan(Math.atan(7.6/(ZDEF+R)))/a);
+    camera.fov=Math.max(32,Math.min(82,vHalf*2*180/Math.PI));
+    camera.aspect=a; camera.updateProjectionMatrix();
+  }
+  var camFocus=new THREE.Vector3(0,2.9,-R+7.6), lookFocus=new THREE.Vector3(0,2.7,-R);
+  var camPos=camFree.clone(), look=lookFree.clone();
+  fitFov();
+  camera.position.copy(camPos); camera.lookAt(look);
+
+  var hall=new THREE.Group(); scene.add(hall);
+
+  /* ---------- Texture helpers ---------- */
+  function canvasTex(w,h,draw,rep){
+    var c=document.createElement("canvas"); c.width=w; c.height=h;
+    draw(c.getContext("2d"),w,h);
+    var t=new THREE.CanvasTexture(c);
+    t.encoding=THREE.sRGBEncoding; t.anisotropy=4;
+    if(rep){t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rep[0],rep[1]);}
+    return t;
+  }
+  function concreteTex(rx,ry,base){
+    return canvasTex(512,512,function(g,w,h){
+      g.fillStyle=base||"#2b3035"; g.fillRect(0,0,w,h);
+      var id=g.getImageData(0,0,w,h);
+      for(var i=0;i<id.data.length;i+=4){
+        var n=(Math.random()-.5)*34;
+        id.data[i]+=n; id.data[i+1]+=n; id.data[i+2]+=n+2;
+      }
+      g.putImageData(id,0,0);
+      for(var k=0;k<40;k++){
+        var x=Math.random()*w,y=Math.random()*h,r=30+Math.random()*90;
+        var gr=g.createRadialGradient(x,y,0,x,y,r);
+        gr.addColorStop(0,Math.random()<.5?"rgba(0,0,0,.25)":"rgba(255,255,255,.07)");
+        gr.addColorStop(1,"rgba(0,0,0,0)");
+        g.fillStyle=gr; g.fillRect(x-r,y-r,r*2,r*2);
+      }
+      g.strokeStyle="rgba(0,0,0,.35)"; g.lineWidth=2;
+      g.strokeRect(1,1,w-2,h-2);
+    },[rx,ry]);
+  }
+  function gridTex(rep){
+    return canvasTex(128,128,function(g,w,h){
+      g.fillStyle="#15181c"; g.fillRect(0,0,w,h);
+      g.strokeStyle="#39414a"; g.lineWidth=2;
+      for(var i=-h;i<w+h;i+=16){
+        g.beginPath(); g.moveTo(i,0); g.lineTo(i+h,h); g.stroke();
+        g.beginPath(); g.moveTo(i,h); g.lineTo(i+h,0); g.stroke();
+      }
+      g.fillStyle="#07090b";
+      for(var x=8;x<w;x+=16)for(var y=8;y<h;y+=16){g.beginPath();g.arc(x,y,2.2,0,TAU);g.fill();}
+    },[rep,rep]);
+  }
+  function slatTex(){
+    return canvasTex(256,512,function(g,w,h){
+      g.fillStyle="#0b1015"; g.fillRect(0,0,w,h);
+      for(var y=18;y<h;y+=26){
+        var gr=g.createLinearGradient(0,y,w,y);
+        gr.addColorStop(0,"rgba(120,200,220,.05)"); gr.addColorStop(.5,"rgba(170,230,245,.75)"); gr.addColorStop(1,"rgba(120,200,220,.05)");
+        g.fillStyle=gr; g.fillRect(0,y,w,4);
+      }
+    });
+  }
+  var glowTex=canvasTex(128,128,function(g,w,h){
+    var gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+    gr.addColorStop(0,"rgba(255,255,255,1)"); gr.addColorStop(.3,"rgba(120,230,255,.45)"); gr.addColorStop(1,"rgba(0,0,0,0)");
+    g.fillStyle=gr; g.fillRect(0,0,w,h);
+  });
+  var beamTexSoft=canvasTex(64,256,function(g,w,h){
+    var id=g.createImageData(w,h), d=id.data;
+    function sm(x){x=Math.max(0,Math.min(1,x)); return x*x*(3-2*x);}
+    for(var y=0;y<h;y++){
+      var t=y/(h-1);                                   // 0＝頂端、1＝底端
+      var av=.8*Math.pow(t,2.2);                       // 垂直：頂端透明、向底端平滑增強
+      for(var x=0;x<w;x++){
+        var u=x/(w-1);
+        var ex=Math.min(u,1-u), ah;                    // 水平分三段（ex＝離最近邊緣的比例）：
+        if(ex<.15) ah=.45*sm(ex/.15);                  //   最外 15%：羽化 0→.45
+        else if(ex<.29) ah=.45+.55*sm((ex-.15)/.14);   //   次外 14%：過渡 .45→1
+        else ah=1;                                     //   中央 42%：實心
+        var i=(y*w+x)*4;
+        d[i]=255; d[i+1]=255; d[i+2]=255; d[i+3]=Math.round(255*av*ah);
+      }
+    }
+    g.putImageData(id,0,0);
+  });
+  var beamTex=canvasTex(8,256,function(g,w,h){
+    var gr=g.createLinearGradient(0,0,0,h);
+    gr.addColorStop(0,"rgba(0,243,255,0)"); gr.addColorStop(.55,"rgba(0,243,255,.18)"); gr.addColorStop(1,"rgba(120,250,255,.75)");
+    g.fillStyle=gr; g.fillRect(0,0,w,h);
+  });
+  function labelTex(text){
+    return canvasTex(256,48,function(g,w,h){
+      g.fillStyle="#06090c"; g.fillRect(0,0,w,h);
+      g.strokeStyle="rgba(0,243,255,.6)"; g.lineWidth=2; g.strokeRect(2,2,w-4,h-4);
+      g.fillStyle="#7ff7ff"; g.font="600 24px Consolas,monospace"; g.textAlign="center"; g.textBaseline="middle";
+      g.fillText(text,w/2,h/2+1);
+    });
+  }
+  function glowMat(map,color,op){
+    return new THREE.MeshBasicMaterial({map:map,color:color,transparent:true,opacity:op==null?1:op,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,fog:false});
+  }
+
+  /* ---------- Floor / Wall / Ceiling ---------- */
+  // 材質底色偏亮，實際明暗由「展示庫燈光」控制（見 tick）
+  var floorMat=new THREE.MeshStandardMaterial({map:concreteTex(9,9,"#5c646b"),color:0xffffff,metalness:.35,roughness:.6});
+  var floor=new THREE.Mesh(new THREE.CircleGeometry(40,64),floorMat);
+  floor.rotation.x=-Math.PI/2; hall.add(floor);
+
+  var wallTex=concreteTex(8,1.6,"#6d767d");
+  var wallMat=new THREE.MeshStandardMaterial({map:wallTex,color:0xffffff,roughness:.9,metalness:.1,side:THREE.BackSide});
+  var wall=new THREE.Mesh(new THREE.CylinderGeometry(R+3,R+3,14,72,1,true),wallMat);
+  wall.position.y=7; hall.add(wall);
+
+  var ceilMat=new THREE.MeshStandardMaterial({color:0x0b0e12,roughness:1,side:THREE.DoubleSide});
+  var ceil=new THREE.Mesh(new THREE.CircleGeometry(R+3,48),ceilMat);
+  ceil.rotation.x=Math.PI/2; ceil.position.y=14; hall.add(ceil);
+
+  // 機庫結構：牆面立柱、橫向金屬帶、青色飾條
+  var ribMat=new THREE.MeshStandardMaterial({color:0x4a535b,metalness:.6,roughness:.5});
+  for(var q0=0;q0<36;q0++){
+    var aq0=q0*TAU/36;
+    var rib=new THREE.Mesh(new THREE.BoxGeometry(.4,13.6,.3),ribMat);
+    rib.position.set(Math.sin(aq0)*(R+2.85),6.9,Math.cos(aq0)*(R+2.85));
+    rib.rotation.y=aq0; hall.add(rib);
+  }
+  [1.1,12.9].forEach(function(yy){
+    var band=new THREE.Mesh(new THREE.TorusGeometry(R+2.8,.11,8,120),ribMat);
+    band.rotation.x=Math.PI/2; band.position.y=yy; hall.add(band);
+  });
+  var trimMat=new THREE.MeshBasicMaterial({color:CYAN,toneMapped:false});
+  var trim=new THREE.Mesh(new THREE.TorusGeometry(R+2.74,.035,6,120),trimMat);
+  trim.rotation.x=Math.PI/2; trim.position.y=11.6; hall.add(trim);
+
+  // 天花板燈具
+  var lampMat=new THREE.MeshBasicMaterial({color:0xdfefff,toneMapped:false});
+  [[8,20],[12.4,26]].forEach(function(c){
+    for(var q=0;q<c[1];q++){
+      var aq=q*TAU/c[1];
+      var lp=new THREE.Mesh(new THREE.BoxGeometry(1.5,.08,.5),lampMat);
+      lp.position.set(Math.sin(aq)*c[0],13.92,Math.cos(aq)*c[0]);
+      lp.rotation.y=aq; hall.add(lp);
+    }
+  });
+  var lampRing=new THREE.Mesh(new THREE.TorusGeometry(4,.14,8,96),lampMat);
+  lampRing.rotation.x=Math.PI/2; lampRing.position.y=13.85; hall.add(lampRing);
+
+  // 地面導軌：同心環 + 放射線
+  function ring(r0,r1,y,mat,seg,ts,tl){
+    var m=new THREE.Mesh(new THREE.RingGeometry(r0,r1,seg||96,1,ts||0,tl||TAU),mat);
+    m.rotation.x=-Math.PI/2; m.position.y=y; return m;
+  }
+  var trackMat=new THREE.MeshBasicMaterial({color:CYAN,transparent:true,opacity:.35,fog:true});
+  hall.add(ring(R-1.55,R-1.5,.012,trackMat));
+  hall.add(ring(6.1,6.14,.012,trackMat));
+  var plateMat=new THREE.MeshStandardMaterial({color:0x0f1216,metalness:.8,roughness:.4});
+  for(var i=0;i<12;i++){
+    var a=i*TAU/12;
+    var b=new THREE.Mesh(new THREE.BoxGeometry(.18,.02,R-5.2),plateMat);
+    b.position.set(Math.sin(a)*((R+4.2)/2-.4),.012,Math.cos(a)*((R+4.2)/2-.4));
+    b.rotation.y=a; hall.add(b);
+  }
+  // 牆底與天花板光環
+  var wallRingMat=new THREE.MeshBasicMaterial({color:CYAN,transparent:true,opacity:.5});
+  var wr=ring(R+2.9,R+2.97,.05,wallRingMat); hall.add(wr);
+  var cr=new THREE.Mesh(new THREE.TorusGeometry(R-1,.05,8,120),new THREE.MeshBasicMaterial({color:0x9fefff,transparent:true,opacity:.35}));
+  cr.rotation.x=Math.PI/2; cr.position.y=13.5; hall.add(cr);
+
+  /* ---------- Central platform ---------- */
+  // 整座平台抬高：與地面（展示庫地板）產生高低差。場景尺寸約 1 單位≈0.45 m，0.3 單位≈13–15 cm
+  var LIFT=.3;
+  var platform=new THREE.Group(); platform.position.y=LIFT; hall.add(platform);
+  var metalDark=new THREE.MeshStandardMaterial({color:0x1b1f24,metalness:.9,roughness:.35});
+  var metalMid=new THREE.MeshStandardMaterial({color:0x2c3138,metalness:.9,roughness:.3});
+  var gTex=gridTex(7);
+  var gridMat=new THREE.MeshStandardMaterial({map:gTex,color:0xcfd6dc,metalness:.8,roughness:.45});
+
+  var ledMat=new THREE.MeshBasicMaterial({color:CYAN,toneMapped:false});
+  var ledSoft=new THREE.MeshBasicMaterial({color:0x60f6ff,toneMapped:false});
+  var padMat=new THREE.MeshBasicMaterial({color:0x9fe8ff,toneMapped:false});   // 白藍色 LED 環面板
+  var padMat2=new THREE.MeshBasicMaterial({color:0x9fe8ff,toneMapped:false});  // 斜角 LED 面板（獨立控制）
+
+  // 碳纖維編織材質：腳下網狀平台 / 平台周圍地板
+  function weaveTex(rep){
+    return canvasTex(128,128,function(g,w,h){
+      g.fillStyle="#101215"; g.fillRect(0,0,w,h);
+      var c=16;
+      for(var yy=0;yy<h/c;yy++)for(var xx=0;xx<w/c;xx++){
+        var horiz=((xx+yy)%2===0);
+        var gr=horiz?g.createLinearGradient(xx*c,yy*c,xx*c,yy*c+c):g.createLinearGradient(xx*c,yy*c,xx*c+c,yy*c);
+        gr.addColorStop(0,"#2a2f35"); gr.addColorStop(.5,"#505962"); gr.addColorStop(1,"#1a1d21");
+        g.fillStyle=gr; g.fillRect(xx*c+1,yy*c+1,c-2,c-2);
+      }
+    },[rep,rep]);
+  }
+  var weaveA=weaveTex(5), weaveB=weaveTex(12);
+  var meshMat=new THREE.MeshStandardMaterial({map:weaveA,bumpMap:weaveA,bumpScale:2.2,metalness:.75,roughness:.45});
+  var carbonFloorMat=new THREE.MeshStandardMaterial({map:weaveB,bumpMap:weaveB,bumpScale:1.5,color:0xb8c0c8,metalness:.6,roughness:.55});
+  var boltMat=new THREE.MeshStandardMaterial({color:0x7d8791,metalness:.95,roughness:.3});
+  var boltGeo=new THREE.CylinderGeometry(.05,.055,.05,8);
+  function bolt(parent,x,y,z){var b=new THREE.Mesh(boltGeo,boltMat); b.position.set(x,y,z); parent.add(b);}
+
+  // 平台周圍的碳纖維地板與外緣滾邊
+  var cf=new THREE.Mesh(new THREE.CircleGeometry(6.05,72),carbonFloorMat);
+  cf.rotation.x=-Math.PI/2; cf.position.y=.018; platform.add(cf);
+  var cfEdge=new THREE.Mesh(new THREE.TorusGeometry(6.08,.045,6,96),metalMid);
+  cfEdge.rotation.x=Math.PI/2; cfEdge.position.y=.04; platform.add(cfEdge);
+  // 碳纖維圓盤的側裙與下緣滾邊（抬高後露出的厚度）
+  var skirtH=LIFT+.02;
+  var skirt=new THREE.Mesh(new THREE.CylinderGeometry(6.08,6.1,skirtH,96,1,true),metalDark);
+  skirt.position.y=(.02-LIFT)/2; platform.add(skirt);
+  var skirtBase=new THREE.Mesh(new THREE.TorusGeometry(6.1,.04,6,96),metalMid);
+  skirtBase.rotation.x=Math.PI/2; skirtBase.position.y=-LIFT+.04; platform.add(skirtBase);
+  var underside=new THREE.Mesh(new THREE.CircleGeometry(6.08,72),new THREE.MeshBasicMaterial({color:0x020304,side:THREE.DoubleSide}));
+  underside.rotation.x=-Math.PI/2; underside.position.y=-LIFT+.03; platform.add(underside);
+
+  function tier(r0,r1,h,y,mats){
+    var m=new THREE.Mesh(new THREE.CylinderGeometry(r0,r1,h,64),mats);
+    m.position.y=y; platform.add(m); return m;
+  }
+  tier(3.62,3.7,.1,.07,[metalDark,metalMid,metalDark]);     // 底部滾邊
+  tier(3.3,3.5,.54,.31,[metalMid,metalDark,metalDark]);      // 平台本體（由地面直接升起）
+  tier(2.5,2.7,.3,.73,[metalDark,gridMat,metalDark]);
+  tier(2.15,2.25,.2,.98,[metalMid,metalMid,metalDark]);
+  // 邊緣金屬環
+  [[3.52,.04,.58],[2.72,.04,.88]].forEach(function(t){
+    var tr=new THREE.Mesh(new THREE.TorusGeometry(t[0],t[1],8,96),metalMid);
+    tr.rotation.x=Math.PI/2; tr.position.y=t[2]; platform.add(tr);
+  });
+
+  // 腳下網狀平台：編織網面 + 金屬外框（入孔式螺絲）+ 同心溝槽
+  var mp=new THREE.Mesh(new THREE.CircleGeometry(1.78,64),meshMat);
+  mp.rotation.x=-Math.PI/2; mp.position.y=1.084; platform.add(mp);
+  // 網面外框：實心金屬環 + 24 個入孔式螺絲孔（真的挖孔，螺絲頭沉在孔內，不凸出）
+  (function(){
+    var fs=new THREE.Shape();
+    fs.absarc(0,0,2.0,0,TAU,false);
+    var inner=new THREE.Path(); inner.absarc(0,0,1.78,0,TAU,true); fs.holes.push(inner);
+    for(var hz=0;hz<24;hz++){
+      var ha=hz*TAU/24, hx=Math.cos(ha)*1.89, hy=Math.sin(ha)*1.89;
+      var hp=new THREE.Path(); hp.absarc(hx,hy,.045,0,TAU,true); fs.holes.push(hp);
+    }
+    var frame=new THREE.Mesh(new THREE.ExtrudeGeometry(fs,{depth:.06,bevelEnabled:false,curveSegments:40}),metalMid);
+    frame.rotation.x=Math.PI/2; frame.position.y=1.12; platform.add(frame);     // 框面 y=1.12，向下 .06
+    var cavMat=new THREE.MeshBasicMaterial({color:0x020304});
+    for(var hq=0;hq<24;hq++){
+      var qa=hq*TAU/24, qx=Math.sin(qa)*1.89, qz=Math.cos(qa)*1.89;
+      // 孔底（暗）
+      var cav=new THREE.Mesh(new THREE.CircleGeometry(.044,16),cavMat);
+      cav.rotation.x=-Math.PI/2; cav.position.set(qx,1.082,qz); platform.add(cav);
+      // 沉入孔內的螺絲頭（頂面低於框面約 .028）
+      var head=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.012,12),boltMat);
+      head.position.set(qx,1.092,qz); platform.add(head);
+    }
+  })();
+  platform.add(ring(.5,.54,1.0875,metalDark,64));
+  platform.add(ring(1.2,1.24,1.0875,metalDark,64));
+  // （十字肋條、中心座與中心螺絲已移除）
+
+  // 通風塊 + 一體成形的 L 型固定座（4 組，位於對角）
+  // - 塊身為平整的實心面（受光時可見平面），頂面為「真的挖孔」的直向（沿徑向）長槽格柵
+  // - 固定座與塊身同材質，從塊底向外延伸成貼地的梯形螺栓板，塊底外側有一道斜角立緣（L 型斷面）
+  var bodyMat=new THREE.MeshStandardMaterial({color:0x363c43,metalness:.35,roughness:.55});
+  var cavityMat=new THREE.MeshStandardMaterial({color:0x040506,metalness:.2,roughness:.9});
+  function ventBlock(){
+    var g=new THREE.Group();
+    var W=1.3, D=.7, zc=3.384;                        // 寬（切線向）、厚（徑向）、中心徑向位置 → 塊占 r 3.03–3.73
+    // 平台外牆（r≈3.5）嵌入塊厚約 2/3：塊內側 3.03–3.5 在平台內，外側 3.5–3.73 露出
+    // 實心塊身：由地面升到 y≈.582，頂面（孔底）塗暗
+    var body=new THREE.Mesh(new THREE.BoxGeometry(W,.5316375,D),[bodyMat,bodyMat,cavityMat,bodyMat,bodyMat,bodyMat]);
+    body.position.set(0,.31581875,zc); g.add(body);
+    // 頂部格柵：厚 .25 的實心板，挖 7 條沿徑向（直向）的貫穿長槽，孔深 .25
+    var gs=new THREE.Shape();
+    gs.moveTo(-W/2,-D/2); gs.lineTo(W/2,-D/2); gs.lineTo(W/2,D/2); gs.lineTo(-W/2,D/2); gs.closePath();
+    for(var i=0;i<7;i++){
+      var cx=(i-3)*.165, hw=.045, hl=.25;
+      var h=new THREE.Path();
+      h.moveTo(cx-hw,-hl); h.lineTo(cx+hw,-hl); h.lineTo(cx+hw,hl); h.lineTo(cx-hw,hl); h.closePath();
+      gs.holes.push(h);
+    }
+    var grille=new THREE.Mesh(new THREE.ExtrudeGeometry(gs,{depth:.25,bevelEnabled:false}),bodyMat);
+    grille.rotation.x=Math.PI/2; grille.position.set(0,.8216375,zc); g.add(grille);   // y .8216375 → .5716375（塊總高 .857375 再降低 10% → .7716375）
+    // 一體成形的固定座：貼地螺栓板（寬度與塊身相同）
+    var ps=new THREE.Shape();
+    [[-W/2,zc],[W/2,zc],[W/2,6.08],[-W/2,6.08]].forEach(function(q,i){ if(i===0) ps.moveTo(q[0],q[1]); else ps.lineTo(q[0],q[1]); });
+    ps.closePath();
+    var plate=new THREE.Mesh(new THREE.ExtrudeGeometry(ps,{depth:.1,bevelEnabled:true,bevelThickness:.01,bevelSize:.01,bevelSegments:1}),bodyMat);
+    plate.rotation.x=Math.PI/2; plate.position.y=.11; g.add(plate);
+    // 叉形尖腳：與固定座同材質、一體接在板端，越過圓盤外緣後斜向外下伸，尖端插入地面
+    var Lg=1.05, th=40*Math.PI/180;
+    var leg=new THREE.Group(); leg.position.set(0,.11,6.08); leg.rotation.x=th; g.add(leg);
+    var ls=new THREE.Shape();
+    [[-W/2,-.02],[W/2,-.02],[.42,Lg],[.2,Lg],[.2,.35],[.13,.26],[0,.22],[-.13,.26],[-.2,.35],[-.2,Lg],[-.42,Lg]].forEach(function(q,i){ if(i===0) ls.moveTo(q[0],q[1]); else ls.lineTo(q[0],q[1]); });
+    ls.closePath();
+    var lm=new THREE.Mesh(new THREE.ExtrudeGeometry(ls,{depth:.1,bevelEnabled:true,bevelThickness:.01,bevelSize:.01,bevelSegments:1}),bodyMat);
+    lm.rotation.x=Math.PI/2; leg.add(lm);                  // 形狀 y 沿腳長方向，厚度朝下
+    // 塊底外側三角塊（直角三角柱）：一直角邊貼緊通風塊外側面、另一直角邊貼緊固定座板面，斜邊朝外上
+    var TRI=.14;
+    var ts=new THREE.Shape(); ts.moveTo(0,0); ts.lineTo(TRI,0); ts.lineTo(0,TRI); ts.closePath();
+    var tri=new THREE.Mesh(new THREE.ExtrudeGeometry(ts,{depth:W,bevelEnabled:false}),bodyMat);
+    tri.rotation.y=-Math.PI/2;                         // 形狀 x → 世界 z（向外），擠出方向 → 世界 -x
+    tri.position.set(W/2,.108,zc+D/2);                 // 寬度與通風塊相同；直角頂點落在「塊外側面 × 板面」的交線上
+    g.add(tri);
+    // 5 顆螺栓
+    [[-.4,5.0],[0,5.1],[.4,5.0],[-.2,5.45],[.2,5.45]].forEach(function(q){ bolt(g,q[0],.135,q[1]); });
+    return g;
+  }
+  for(var vk=0;vk<4;vk++){
+    var vg=ventBlock(); vg.rotation.y=vk*TAU/4+TAU/8; platform.add(vg);
+  }
+
+  // LED 發光結構（ledMat / ledSoft 已於上方建立）
+  // 區塊式 LED 環：16 塊白藍面板（塊間只留暗色縫隙，無金屬隔板），並帶金屬外框
+  var LED_N=16, LED_GAP=.05;
+  platform.add(ring(1.97,2.28,1.083,metalDark,64));
+  for(var tk=0;tk<LED_N;tk++){
+    var t0=tk*TAU/LED_N, gap=LED_GAP, len=TAU/LED_N-gap*2;
+    var blk=ring(2.02,2.23,1.09,padMat,8,t0+gap,len); platform.add(blk);
+  }
+  var innerRing=ring(1.0,1.06,1.09,ledSoft,64); platform.add(innerRing);
+  // 8 片帶金屬外框的斜面 LED 面板（夾在通風塊之間）
+  var seg=[];
+  for(var pk=0;pk<4;pk++){
+    [-1,1].forEach(function(sgn){
+      var pc=pk*TAU/4+sgn*.297;
+      platform.add(ring(2.71,3.17,.585,metalDark,12,pc-Math.PI/2-.27,.54));
+      var sg=ring(2.78,3.1,.592,padMat2,12,pc-Math.PI/2-.244,.488); platform.add(sg); seg.push(sg);
+    });
+  }
+  // 平台光暈
+  var haloMat=glowMat(glowTex,0x7fefff,.8);
+  var halo=new THREE.Mesh(new THREE.PlaneGeometry(8,8),haloMat);
+  halo.rotation.x=-Math.PI/2; halo.position.y=1.12; platform.add(halo);
+  // 網面出光：網面上方的白藍光盤
+  var wellMat=glowMat(glowTex,0xdaf8ff,.9);
+  var well=new THREE.Mesh(new THREE.PlaneGeometry(4.4,4.4),wellMat);
+  well.rotation.x=-Math.PI/2; well.position.y=1.14; platform.add(well);
+  var floorHaloMat=glowMat(glowTex,0x1aa9c8,.45);
+  var floorHalo=new THREE.Mesh(new THREE.PlaneGeometry(16,16),floorHaloMat);
+  floorHalo.rotation.x=-Math.PI/2; floorHalo.position.y=.03; platform.add(floorHalo);
+  // 由下而上的光束：每塊 LED 面板上方一根柔邊的橢圓截面光柱（不再是有內壁、外壁、側面的方框）
+  // - 截面為橢圓，隨高度逐漸向外／向兩側擴散；材質用「邊緣羽化」著色（面向鏡頭處最亮、輪廓處淡出為 0），
+  //   所以看不到任何框線，相鄰光柱在高處自然融合
+  // - 世界角 α 的座標為 x=r·sinα、z=r·cosα（RingGeometry 的 θ 需加 π/2 才是 α）
+  function makeBeamMat(color,opacity){
+    return new THREE.ShaderMaterial({
+      uniforms:{uColor:{value:new THREE.Color(color)},uOp:{value:opacity}},
+      vertexShader:[
+        "varying vec3 vN; varying vec3 vV; varying float vF;",
+        "void main(){",
+        "  vec4 mv=modelViewMatrix*vec4(position,1.0);",
+        "  vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); vF=uv.y;",
+        "  gl_Position=projectionMatrix*mv;",
+        "}"].join("\n"),
+      fragmentShader:[
+        "uniform vec3 uColor; uniform float uOp;",
+        "varying vec3 vN; varying vec3 vV; varying float vF;",
+        "void main(){",
+        "  float fr=pow(abs(dot(normalize(vN),normalize(vV))),1.25);",       // 輪廓處（法線與視線垂直）淡出
+        "  float av=pow(1.0-vF,2.0)*smoothstep(0.0,0.06,vF);",              // 頂端透明、底端（面板處）最亮，底緣柔化
+        "  gl_FragColor=vec4(uColor,uOp*fr*av*1.15);",
+        "}"].join("\n"),
+      transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide
+    });
+  }
+  var beamMat=makeBeamMat(0xffffff,.9);
+  var panelBeamMat=makeBeamMat(0xdff8ff,.8);
+  // ac：面板中心世界角；halfArc：面板半弧長（世界單位）；rm：面板中心半徑；ht：面板半厚度；
+  // h：光柱長；d：頂端整體外移；sp：頂端額外擴散量（徑向與切線向）
+  function beamTube(ac,halfArc,rm,ht,h,yBottom,d,sp,mat){
+    var K=24, F=16, pos=[], nor=[], uvs=[], idx=[];
+    var sn=Math.sin(ac), cs=Math.cos(ac);
+    var Rx=sn, Rz=cs, Tx=cs, Tz=-sn;                 // 徑向、切線方向單位向量
+    for(var fi=0;fi<=F;fi++){
+      var f=fi/F, y=yBottom+h*f, rc=rm+d*f, sR=ht+sp*f, sT=halfArc+sp*f;
+      for(var k=0;k<=K;k++){
+        var ph=TAU*k/K, u=sR*Math.cos(ph), v=sT*Math.sin(ph);
+        pos.push(Rx*(rc+u)+Tx*v, y, Rz*(rc+u)+Tz*v);
+        var nx=Math.cos(ph)/sR, nt=Math.sin(ph)/sT, nl=Math.sqrt(nx*nx+nt*nt)||1;
+        nor.push((Rx*nx+Tx*nt)/nl, 0, (Rz*nx+Tz*nt)/nl);
+        uvs.push(k/K,f);
+      }
+    }
+    for(var fj=0;fj<F;fj++) for(var kk=0;kk<K;kk++){
+      var i0=fj*(K+1)+kk, i1=i0+1, i2=i0+(K+1), i3=i2+1;
+      idx.push(i0,i2,i1, i1,i2,i3);
+    }
+    var g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute("normal",new THREE.Float32BufferAttribute(nor,3));
+    g.setAttribute("uv",new THREE.Float32BufferAttribute(uvs,2));
+    g.setIndex(idx);
+    var m=new THREE.Mesh(g,mat); m.frustumCulled=false; platform.add(m);
+  }
+  // 區塊式 LED 環（16 塊，半徑 2.02–2.23，面板面高 1.09，光柱長 3.2）
+  for(var bk2=0;bk2<LED_N;bk2++){
+    var bl=TAU/LED_N-LED_GAP*2;
+    var bac=Math.PI/2+bk2*TAU/LED_N+LED_GAP+bl/2;
+    beamTube(bac,bl/2*2.125,2.125,.105,3.2,1.1,0,.25,beamMat);
+  }
+  // 斜角 LED 面板（8 片，半徑 2.78–3.1，面板面高 .592，光柱長 7.4，向外擴散）
+  for(var pb=0;pb<4;pb++){
+    [-1,1].forEach(function(sgn){
+      var pcb=pb*TAU/4+sgn*.297;
+      beamTube(pcb,.244*2.94,2.94,.16,7.4,.592,.97,.3,panelBeamMat);
+    });
+  }
+  // 光束中上升的光點
+  var BD=70, bdp=new Float32Array(BD*3);
+  function resetBd(i,fromBottom){
+    var rr=Math.random()*2.2, aa=Math.random()*TAU;
+    bdp[i*3]=Math.cos(aa)*rr; bdp[i*3+1]=fromBottom?1.12:1.12+Math.random()*3.0; bdp[i*3+2]=Math.sin(aa)*rr;
+  }
+  for(var bi=0;bi<BD;bi++) resetBd(bi,false);
+  var bdGeo=new THREE.BufferGeometry(); bdGeo.setAttribute("position",new THREE.BufferAttribute(bdp,3));
+  var bdMat=new THREE.PointsMaterial({size:.1,map:glowTex,color:0xbff6ff,transparent:true,opacity:.8,
+    blending:THREE.AdditiveBlending,depthWrite:false});
+  var bdPts=new THREE.Points(bdGeo,bdMat); bdPts.frustumCulled=false; platform.add(bdPts);
+  // 聚光打在天花板上的光斑
+  var poolMat=glowMat(glowTex,0x9fefff,.5);
+  var pool=new THREE.Mesh(new THREE.PlaneGeometry(10,10),poolMat);
+  pool.rotation.x=Math.PI/2; pool.position.y=13.86; hall.add(pool);
+  // 懸浮全息環
+  var holo=new THREE.Group(); platform.add(holo);
+  var holoMat=new THREE.MeshBasicMaterial({color:CYAN,transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false});
+  [1.6,1.3,1.0].forEach(function(rr,idx){
+    var t=new THREE.Mesh(new THREE.TorusGeometry(rr,.012,6,80),holoMat);
+    t.rotation.x=Math.PI/2; t.position.y=1.7+idx*.7; t.userData.sp=(idx%2?-1:1)*(0.5+idx*.25); holo.add(t);
+  });
+  // 每個全息環使用獨立材質（呼吸燈相位不同，呈由下往上的波動）
+  holo.children.forEach(function(r){ r.material=holoMat.clone(); });
+  // 平台光源
+  var pLight=new THREE.PointLight(CYAN,2.2,14,1.6); pLight.position.set(0,1.4+LIFT,0); hall.add(pLight);
+  // 由下而上的聚光燈
+  var upSpot=new THREE.SpotLight(0xaef0ff,4.2,22,.62,.75,1.1);
+  upSpot.position.set(0,1.1+LIFT,0); upSpot.target.position.set(0,10,0); hall.add(upSpot); hall.add(upSpot.target);
+  // 斜角 LED 面板的向上聚光（4 盞，各在軸向兩片面板之間）
+  var panelSpots=[];
+  for(var ps2=0;ps2<4;ps2++){
+    var pa2=ps2*TAU/4;
+    var psp=new THREE.SpotLight(0xcff6ff,2.6,16,.5,.8,1.2);
+    psp.position.set(Math.sin(pa2)*2.94,.6+LIFT,Math.cos(pa2)*2.94);
+    psp.target.position.set(Math.sin(pa2)*3.3,9,Math.cos(pa2)*3.3);
+    hall.add(psp); hall.add(psp.target); panelSpots.push(psp);
+  }
+
+  /* ---------- Lighting (global) ---------- */
+  var hemi=new THREE.HemisphereLight(0x8fb0c4,0x2b343b,.38); scene.add(hemi);
+  var rim=new THREE.DirectionalLight(0x8fc9e8,.25); rim.position.set(0,10,10); scene.add(rim);
+  // 展示庫照明：天花板四盞冷白燈
+  var hallLights=[];
+  for(var hq=0;hq<4;hq++){
+    var ha=hq*TAU/4+TAU/8;
+    var hl=new THREE.PointLight(0xe4f1ff,0,36,1.2);
+    hl.position.set(Math.sin(ha)*7,12,Math.cos(ha)*7); scene.add(hl); hallLights.push(hl);
+  }
+
+  /* ---------- 燈光模式（5 段，循環切換） ---------- */
+  // 平台燈光與展示庫燈光各自獨立，共用同一組 5 段亮度
+  // v：一般照明亮度；led：LED 環 / 燈條亮度（螢光模式只剩 LED 亮）。亮度：明亮 > 柔和 > 微光 > 螢光
+  var STAGES=[
+    {name:"明亮",v:.7,led:.7,fl:0},
+    {name:"柔和",v:.55,led:.55,fl:0},
+    {name:"微光",v:.2,led:.35,fl:0},
+    {name:"螢光",v:0,led:.4,fl:1},   // fl：LED 轉為螢光藍
+    {name:"關閉",v:0,led:0,fl:0}
+  ];
+  var FLUOR=new THREE.Color(0x3DEAFE);   // 螢光藍
+  function mix(a,b,f){return a+(b-a)*f;}
+  var modePlat=0, modePanel=0, modePod=0, modeHall=0,
+      LV={holo:1,pod:.7,plat:.7,panel:.7,hall:.7,podL:.7,platL:.7,panelL:.7,hallL:.7,flP:0,flS:0,flD:0,flH:0,amb:1,expo:1.2};
+
+  /* ---------- Original armor designs ---------- */
+  var ARMORS=[
+    {code:"AR-01",name:"哨兵 SENTINEL",main:0x9aa6b0,acc:0x2b6f8f,glow:0x00f3ff,sh:0,crest:1,bars:[78,90,52],
+     desc:"通用型重裝戰衣，肩部加裝穩定護板，適合長時間駐守與防衛任務。"},
+    {code:"AR-02",name:"熔爐 FORGE",main:0x30343a,acc:0xff7a1a,glow:0xff9a3c,sh:1,crest:0,bars:[92,72,45],
+     desc:"高輸出工業型，散熱鰭片與橘色能量導管使其在高溫作業環境中維持穩定。"},
+    {code:"AR-03",name:"極光 AURORA",main:0xdfe4e8,acc:0x1d3a6b,glow:0x66e0ff,sh:2,crest:2,bars:[64,60,95],
+     desc:"輕量高速型，雙角穩定翼提升機動性，專為高空偵察與快速部署設計。"},
+    {code:"AR-04",name:"幽影 PHANTOM",main:0x4a4f57,acc:0x7a4dff,glow:0xa987ff,sh:1,crest:1,bars:[70,66,88],
+     desc:"低可見度潛行型，吸光塗層搭配紫色感測陣列，適用於隱蔽滲透。"},
+    {code:"AR-05",name:"森嚴 VERDANT",main:0x2f5d4a,acc:0xb9c4c9,glow:0xa6ff6b,sh:0,crest:2,bars:[68,84,58],
+     desc:"野外長程支援型，防塵密封關節與生物感測模組，耐受惡劣地形。"},
+    {code:"AR-06",name:"古銅 BRONZE",main:0x8a6a45,acc:0x14161a,glow:0xffc247,sh:2,crest:0,bars:[85,95,30],
+     desc:"最大化裝甲厚度的重型突擊型，行動遲緩，但幾乎不畏懼任何直接衝擊。"},
+    {code:"AR-07",name:"深海 ABYSS",main:0x1b2f4f,acc:0xeaf3f7,glow:0x7fe7ff,sh:1,crest:1,bars:[60,80,66],
+     desc:"耐壓水下作業型，密封艙體與推進鰭設計，可於深水區長時間運作。"},
+    {code:"AR-08",name:"碧霜 FROST",main:0x1f8a8a,acc:0xf3f7f8,glow:0xffffff,sh:0,crest:2,bars:[66,70,80],
+     desc:"低溫環境專用型，內建加熱迴路與防凍關節，極地任務的首選。"},
+    {code:"AR-09",name:"黑曜 OBSIDIAN",main:0x0e1013,acc:0x00bcd4,glow:0x00f3ff,sh:2,crest:1,bars:[88,78,72],
+     desc:"旗艦原型機，整合全部實驗模組，是整座機庫中最新、也最難駕馭的一套。"}
+  ];
+
+  function buildArmor(p){
+    var g=new THREE.Group();
+    var main=new THREE.MeshStandardMaterial({color:p.main,metalness:.82,roughness:.3});
+    var acc=new THREE.MeshStandardMaterial({color:p.acc,metalness:.85,roughness:.28});
+    var dark=new THREE.MeshStandardMaterial({color:0x14171b,metalness:.7,roughness:.5});
+    var glow=new THREE.MeshBasicMaterial({color:p.glow,toneMapped:false});
+    function add(geo,m,x,y,z,parent){var mesh=new THREE.Mesh(geo,m);mesh.position.set(x,y,z);(parent||g).add(mesh);return mesh;}
+
+    [-1,1].forEach(function(s){
+      // 腿
+      var leg=new THREE.Group(); leg.position.set(.27*s,0,0); g.add(leg);
+      add(new THREE.BoxGeometry(.36,.18,.72),acc,0,.09,.12,leg);
+      add(new THREE.CylinderGeometry(.17,.13,.82,8),main,0,.59,0,leg);
+      add(new THREE.BoxGeometry(.3,.5,.12),acc,0,.75,.13,leg);
+      add(new THREE.SphereGeometry(.19,12,10),dark,0,1.02,.02,leg);
+      add(new THREE.CylinderGeometry(.22,.17,.8,8),main,0,1.42,0,leg);
+      add(new THREE.BoxGeometry(.3,.4,.12),acc,0,1.45,.18,leg);
+      // 手臂
+      var arm=new THREE.Group(); arm.position.set(.8*s,3.0,0); arm.rotation.z=.2*s; g.add(arm);
+      var sho;
+      if(p.sh===0){ sho=add(new THREE.SphereGeometry(.27,14,10),acc,0,.02,0,arm); }
+      else if(p.sh===1){ sho=add(new THREE.BoxGeometry(.52,.3,.5),acc,.03*s,.04,0,arm); sho.rotation.z=-.3*s; }
+      else { sho=add(new THREE.SphereGeometry(.27,14,10),acc,0,.02,0,arm); sho.scale.set(1.1,.6,1.15); }
+      add(new THREE.CylinderGeometry(.15,.12,.7,8),main,0,-.45,0,arm);
+      add(new THREE.SphereGeometry(.13,10,8),dark,0,-.85,0,arm);
+      var fore=new THREE.Group(); fore.position.set(0,-.85,0); fore.rotation.x=-.25; arm.add(fore);
+      add(new THREE.CylinderGeometry(.14,.1,.6,8),acc,0,-.35,0,fore);
+      add(new THREE.BoxGeometry(.2,.24,.2),main,0,-.78,0,fore);
+      var palm=add(new THREE.CircleGeometry(.065,16),glow,-.105*s,-.8,0,fore);
+      palm.rotation.y=-s*Math.PI/2;
+    });
+    // 骨盆 / 腰 / 軀幹
+    add(new THREE.BoxGeometry(.95,.35,.55),dark,0,1.95,0);
+    add(new THREE.CylinderGeometry(.34,.38,.35,8),dark,0,2.25,0);
+    var torso=add(new THREE.CylinderGeometry(.62,.42,.9,8),main,0,2.7,0); torso.scale.z=.62;
+    var chest=add(new THREE.BoxGeometry(.72,.5,.12),acc,0,2.85,.3); chest.rotation.x=-.15;
+    var core=add(new THREE.CylinderGeometry(.12,.12,.04,6),glow,0,2.85,.375); core.rotation.x=Math.PI/2;
+    add(new THREE.BoxGeometry(.6,.6,.2),dark,0,2.8,-.34);
+    add(new THREE.CylinderGeometry(.12,.14,.2,8),dark,0,3.22,0);
+    // 頭盔
+    var head=new THREE.Group(); head.position.set(0,3.5,0); g.add(head);
+    var skull=add(new THREE.SphereGeometry(.26,18,14),main,0,0,0,head); skull.scale.set(.95,1.1,1.05);
+    add(new THREE.BoxGeometry(.3,.34,.14),dark,0,-.02,.2,head);
+    add(new THREE.BoxGeometry(.3,.045,.03),glow,0,.04,.275,head);
+    add(new THREE.BoxGeometry(.045,.2,.03),glow,0,-.07,.275,head);
+    add(new THREE.BoxGeometry(.2,.14,.16),acc,0,-.2,.14,head);
+    [-1,1].forEach(function(s){
+      var ear=add(new THREE.CylinderGeometry(.07,.07,.08,10),acc,.27*s,0,0,head); ear.rotation.z=Math.PI/2;
+      if(p.crest===2){
+        var horn=add(new THREE.ConeGeometry(.045,.26,6),acc,.12*s,.3,-.03,head); horn.rotation.z=-.3*s;
+      }
+    });
+    if(p.crest===1){ add(new THREE.BoxGeometry(.04,.22,.42),acc,0,.28,-.02,head); }
+    g.scale.setScalar(1.12);
+    return g;
+  }
+
+  /* ---------- Display pods ---------- */
+  var pods=[];
+  var stripBase=new THREE.Color(0xcfeaff);
+  var frameMat=new THREE.MeshStandardMaterial({color:0x20252b,metalness:.9,roughness:.35});
+  var frameMat2=new THREE.MeshStandardMaterial({color:0x353c44,metalness:.9,roughness:.3});
+  var slat=slatTex();
+
+  function buildPod(i,p){
+    var theta=(-168+i*24)*Math.PI/180;      // 15 個展示櫃均分整圈（24° 間隔），正前方（鏡頭側）留一個缺口
+    var pod=new THREE.Group();
+    pod.position.set(Math.sin(theta)*R,0,-Math.cos(theta)*R);
+    pod.rotation.y=-theta;
+    pod.userData.podIndex=i;
+    hall.add(pod);
+
+    function box(w,h,d,m,x,y,z){var b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);b.position.set(x,y,z);pod.add(b);return b;}
+    // 背板
+    var backMat=new THREE.MeshStandardMaterial({map:slat,emissiveMap:slat,emissive:0x4a8aa0,emissiveIntensity:.7,color:0x30383f,metalness:.6,roughness:.5});
+    box(3.5,5.5,.15,backMat,0,2.85,-.85);
+    // 側壁
+    box(.1,5.5,1.7,frameMat,-1.7,2.85,0);
+    box(.1,5.5,1.7,frameMat,1.7,2.85,0);
+    // 立體金屬外框（立柱）
+    [-1,1].forEach(function(s){
+      box(.55,5.9,.55,frameMat,2.0*s,2.95,.1);
+      box(.12,5.9,.7,frameMat2,2.3*s,2.95,.05);
+      box(.7,.3,.9,frameMat2,2.1*s,.15,.05);
+    });
+    // 頂部橫樑 & 底座
+    box(4.9,.5,1.9,frameMat,0,5.85,.05);
+    box(4.9,.14,2,frameMat2,0,5.55,.08);
+    box(4.9,.3,1.9,frameMat,0,.15,.05);
+    // 戰衣站台
+    box(3.2,.35,1.6,frameMat2,0,.3,.05);
+    var plate=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.1,.08,32),new THREE.MeshBasicMaterial({color:0x7fefff,transparent:true,opacity:.55}));
+    plate.position.set(0,.5,.1); pod.add(plate);
+    var lbl=new THREE.Mesh(new THREE.PlaneGeometry(1.5,.28),new THREE.MeshBasicMaterial({map:labelTex(p.code),toneMapped:false}));
+    lbl.position.set(0,.3,.87); pod.add(lbl);
+    // 垂直 LED 燈條
+    var stripMat=new THREE.MeshBasicMaterial({color:stripBase.clone(),toneMapped:false});
+    var glows=[];
+    [-1,1].forEach(function(s){
+      var st=new THREE.Mesh(new THREE.BoxGeometry(.2,5.0,.05),stripMat);
+      st.position.set(1.98*s,2.95,.4); pod.add(st);
+      var gl=new THREE.Mesh(new THREE.PlaneGeometry(1.5,6.4),glowMat(glowTex,0x8fe6ff,.55));
+      gl.position.set(1.98*s,2.95,.48); pod.add(gl); glows.push(gl);
+    });
+    // 頂燈面板
+    var topLight=new THREE.Mesh(new THREE.BoxGeometry(2.8,.04,1.2),new THREE.MeshBasicMaterial({color:0xeaffff,toneMapped:false}));
+    topLight.position.set(0,5.5,.12); pod.add(topLight);
+    // 戰衣
+    if(!p.empty){ var armor=buildArmor(p); armor.position.set(0,.53,.1); pod.add(armor); }   // 空展示櫃不放戰衣
+    // 由上往下聚光
+    var spot=null;                                   // 空展示櫃不加聚光燈，避免場景光源數量增加
+    if(!p.empty){
+      spot=new THREE.SpotLight(0xdff6ff,2.6,13,.55,.65,1.4);
+      spot.position.set(0,5.4,.5); spot.target.position.set(0,2.0,.1);
+      pod.add(spot); pod.add(spot.target);
+    }
+    // 微光錐
+    var cone=new THREE.Mesh(new THREE.CylinderGeometry(.7,1.5,5,24,1,true),
+      glowMat(beamTex,0xbfeaff,.0));
+    cone.scale.y=-1; cone.position.set(0,2.9,.1); pod.add(cone);
+    var coneMat=new THREE.MeshBasicMaterial({color:0xbfeaff,transparent:true,opacity:.05,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+    cone.material=coneMat;
+
+    var info={group:pod,index:i,theta:theta,spot:spot,stripMat:stripMat,glows:glows,coneMat:coneMat,
+      backMat:backMat,topMat:topLight.material,plateMat:plate.material,
+      hover:0,focus:0,vis:1,phase:Math.random()*TAU,data:p};
+    pods.push(info); return info;
+  }
+  // 15 個展示櫃：中間 9 個為戰衣（索引 3–11），兩側各 3 個為空展示櫃
+  var EMPTY_PODS=3, emptyN=0;
+  for(var pi=0; pi<ARMORS.length+EMPTY_PODS*2; pi++){
+    var ai=pi-EMPTY_PODS, pdata;
+    if(ai>=0 && ai<ARMORS.length) pdata=ARMORS[ai];
+    else{ emptyN++; pdata={code:"EMPTY-0"+emptyN,name:"空展示櫃 EMPTY",empty:true,
+      desc:"待命中的空展示櫃，尚未存放戰衣。"}; }
+    buildPod(pi,pdata);
+  }
+
+  /* ---------- Dust ---------- */
+  var DN=320, dpos=new Float32Array(DN*3);
+  for(var d=0;d<DN;d++){
+    var rr=Math.random()*(R+1), aa2=Math.random()*TAU;
+    dpos[d*3]=Math.cos(aa2)*rr; dpos[d*3+1]=Math.random()*11; dpos[d*3+2]=Math.sin(aa2)*rr;
+  }
+  var dgeo=new THREE.BufferGeometry(); dgeo.setAttribute("position",new THREE.BufferAttribute(dpos,3));
+  var dust=new THREE.Points(dgeo,new THREE.PointsMaterial({size:.07,map:glowTex,color:0x9fefff,transparent:true,opacity:.55,blending:THREE.AdditiveBlending,depthWrite:false}));
+  scene.add(dust);
+
+  /* ---------- Interaction ---------- */
+  var rotTarget=0, focus=-1, zFree=ZDEF;
+  var ZMIN=3.0, ZMAX=13.2;                 // 展示庫視角：拉進／拉遠的鏡頭距離範圍
+  function zoomBy(dz){ if(focus<0) zFree=Math.max(ZMIN,Math.min(ZMAX,zFree+dz)); }
+  var pointers={}, pinch=null;               // 雙指縮放狀態
+  var raycaster=new THREE.Raycaster(), mouse=new THREE.Vector2();
+  var dragging=false, dragged=false, sx=0, sy=0, lx=0;
+  var infoEl=document.getElementById("info");
+
+  function nearestAngle(target){
+    var cur=hall.rotation.y;
+    var diff=((target-cur+Math.PI)%TAU+TAU)%TAU-Math.PI;
+    return cur+diff;
+  }
+  function setFocus(i){
+    focus=i;
+    if(i>=0){
+      rotTarget=nearestAngle(pods[i].theta);
+      var p=pods[i].data;
+      document.getElementById("iCode").textContent=p.code+(p.empty?" / STANDBY":" / ARMOR PROTOTYPE");
+      document.getElementById("iName").textContent=p.name;
+      document.getElementById("iDesc").textContent=p.desc;
+      var labels=["POWER","ARMOR","SPEED"], cols=["#00f3ff","#7ff0a8","#ffd166"];
+      document.getElementById("iBars").innerHTML=p.empty?"":p.bars.map(function(v,k){
+        return '<div class="bar"><span>'+labels[k]+'</span><i style="--v:'+v+'%;--c:'+cols[k]+'"></i></div>';
+      }).join("");
+      infoEl.classList.add("show");
+    }else{
+      infoEl.classList.remove("show");
+    }
+  }
+  function pick(ev){
+    var r=renderer.domElement.getBoundingClientRect();
+    mouse.x=((ev.clientX-r.left)/r.width)*2-1;
+    mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+    raycaster.setFromCamera(mouse,camera);
+    var hits=raycaster.intersectObjects(pods.map(function(p){return p.group;}),true);
+    for(var h=0;h<hits.length;h++){
+      var o=hits[h].object;
+      while(o){ if(o.userData&&o.userData.podIndex!==undefined) return o.userData.podIndex; o=o.parent; }
+    }
+    return -1;
+  }
+  var hoverIdx=-1;
+  function pinchDist(){
+    var k=Object.keys(pointers); if(k.length<2) return 0;
+    var a=pointers[k[0]], b=pointers[k[1]]; return Math.hypot(a.x-b.x,a.y-b.y);
+  }
+  app.addEventListener("pointerdown",function(e){
+    pointers[e.pointerId]={x:e.clientX,y:e.clientY};
+    if(Object.keys(pointers).length===2){                 // 第二根手指落下：進入雙指縮放，取消拖曳／點擊
+      pinch={d0:pinchDist(),z0:zFree}; dragging=false; dragged=true;
+      app.setPointerCapture(e.pointerId); return;
+    }
+    dragging=true; dragged=false; sx=lx=e.clientX; sy=e.clientY;
+    app.classList.add("dragging"); app.setPointerCapture(e.pointerId);
+  });
+  app.addEventListener("pointermove",function(e){
+    if(pointers[e.pointerId]){ pointers[e.pointerId].x=e.clientX; pointers[e.pointerId].y=e.clientY; }
+    if(pinch){                                            // 雙指張開＝拉進、捏合＝拉遠
+      if(focus<0) zFree=Math.max(ZMIN,Math.min(ZMAX,pinch.z0-(pinchDist()-pinch.d0)*.025));
+      return;
+    }
+    if(dragging){
+      if(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>5) dragged=true;
+      if(dragged && focus<0){
+        rotTarget-=(e.clientX-lx)*.006;
+      }
+      lx=e.clientX;
+    }else{
+      hoverIdx=pick(e);
+      app.classList.toggle("hover",hoverIdx>=0);
+    }
+  });
+  function endDrag(e){
+    delete pointers[e.pointerId];
+    if(pinch){ if(Object.keys(pointers).length<2) pinch=null; dragging=false; app.classList.remove("dragging"); return; }
+    if(!dragging) return;
+    dragging=false; app.classList.remove("dragging");
+    if(!dragged){
+      var i=pick(e);
+      if(i>=0) setFocus(i===focus?-1:i); else setFocus(-1);
+    }else{
+      var dx=e.clientX-sx, dy=e.clientY-sy, adx=Math.abs(dx), ady=Math.abs(dy);
+      if(dy>70 && ady>adx*1.5){ setFocus(-1); zFree=ZDEF; }      // 下滑：退回中央平台
+      else if(focus>=0 && adx>50 && adx>ady) step(dx<0?1:-1);   // 拉近時左右滑：切換展示櫃
+    }
+  }
+  app.addEventListener("pointerup",endDrag);
+  app.addEventListener("pointercancel",function(e){delete pointers[e.pointerId]; pinch=null; dragging=false;app.classList.remove("dragging");});
+  app.addEventListener("wheel",function(e){
+    e.preventDefault(); zoomBy(e.deltaY*.006);
+  },{passive:false});
+
+  function step(dir){ // dir: +1 左移（顯示更右側展示櫃）
+    if(focus>=0){
+      var n=Math.max(0,Math.min(pods.length-1,focus+dir));
+      setFocus(n);
+    }else rotTarget+=dir*.14;
+  }
+  window.addEventListener("keydown",function(e){
+    if(e.key==="ArrowLeft") step(-1);
+    else if(e.key==="ArrowRight") step(1);
+    else if((e.key==="ArrowUp"||e.key==="+"||e.key==="=")&&focus<0) zoomBy(-.6);
+    else if((e.key==="ArrowDown"||e.key==="-"||e.key==="_")&&focus<0) zoomBy(.6);
+    else if(e.key==="Escape") setFocus(-1);
+    else if(e.key==="l"||e.key==="L") cyclePlat();
+    else if(e.key==="j"||e.key==="J") cyclePanel();
+    else if(e.key==="k"||e.key==="K") cyclePod();
+    else if(e.key==="h"||e.key==="H") cycleHall();
+    else return;
+    e.preventDefault();
+  });
+  function makeLightBtn(btnId,nameId,get,set){
+    var btn=document.getElementById(btnId), label=document.getElementById(nameId);
+    var pips=btn.querySelectorAll("i");
+    function cycle(){
+      var n=(get()+1)%STAGES.length; set(n);
+      label.textContent=STAGES[n].name;
+      for(var q=0;q<pips.length;q++) pips[q].classList.toggle("on",q<STAGES.length-1-n);
+    }
+    btn.onclick=cycle;
+    return cycle;
+  }
+  var cyclePlat=makeLightBtn("bLight","lName",function(){return modePlat;},function(n){modePlat=n;});
+  var cyclePanel=makeLightBtn("bPanel","sName",function(){return modePanel;},function(n){modePanel=n;});
+  var cyclePod=makeLightBtn("bPod","pName",function(){return modePod;},function(n){modePod=n;});
+  var cycleHall=makeLightBtn("bHall","hName",function(){return modeHall;},function(n){modeHall=n;});
+
+  window.addEventListener("resize",function(){
+    fitFov();
+    renderer.setSize(innerWidth,innerHeight);
+  });
+
+  /* ---------- Loop ---------- */
+  var pw=new THREE.Vector3();
+  var clock=new THREE.Clock(), tmp=new THREE.Vector3(), tmpL=new THREE.Vector3(), c1=new THREE.Color();
+  function tick(){
+    var dt=Math.min(clock.getDelta(),.05), t=clock.elapsedTime;
+
+    hall.rotation.y+=(rotTarget-hall.rotation.y)*Math.min(1,dt*5);
+
+    // 鏡頭
+    camFree.z=zFree;
+    var k=Math.min(1,dt*3.2);
+    if(focus>=0){ tmp.copy(camFocus); tmpL.copy(lookFocus); }
+    else { tmp.copy(camFree); tmpL.copy(lookFree); }
+    // 鏡頭僅保留極輕微的上下起伏
+    tmp.y+=Math.sin(t*.31)*.05;   // 已移除左右（x）晃動，讓中央平台維持在畫面正中
+    camPos.lerp(tmp,k); look.lerp(tmpL,k);
+    camera.position.copy(camPos); camera.lookAt(look);
+
+    // 平台脈衝
+    // 燈光模式平滑過渡
+    var lk=Math.min(1,dt*3);
+    LV.pod+=(STAGES[modePod].v-LV.pod)*lk; LV.plat+=(STAGES[modePlat].v-LV.plat)*lk;
+    LV.hall+=(STAGES[modeHall].v-LV.hall)*lk;
+    LV.panel+=(STAGES[modePanel].v-LV.panel)*lk; LV.panelL+=(STAGES[modePanel].led-LV.panelL)*lk; LV.flS+=(STAGES[modePanel].fl-LV.flS)*lk;
+    LV.podL+=(STAGES[modePod].led-LV.podL)*lk; LV.platL+=(STAGES[modePlat].led-LV.platL)*lk;
+    LV.hallL+=(STAGES[modeHall].led-LV.hallL)*lk;
+    LV.flP+=(STAGES[modePlat].fl-LV.flP)*lk; LV.flD+=(STAGES[modePod].fl-LV.flD)*lk;
+    LV.flH+=(STAGES[modeHall].fl-LV.flH)*lk;
+    var HL=LV.hall, HLL=LV.hallL;
+    LV.amb=.04+.96*(.4*LV.plat+.6*LV.pod);
+    LV.expo=.9+.3*Math.max(LV.plat,LV.panel,LV.pod,HL);
+    hemi.intensity=.38*LV.amb+1.0*HL; rim.intensity=.25*LV.amb+.5*HL;
+    for(var hi=0;hi<hallLights.length;hi++) hallLights[hi].intensity=1.3*HL;
+    // 展示庫整體色調：地面、牆面、天花板、霧與背景
+    var hs=.1+.9*HL;
+    floorMat.color.setScalar(hs); wallMat.color.setScalar(hs);
+    ceilMat.color.setRGB(.04+.26*HL,.055+.28*HL,.07+.3*HL);
+    ribMat.color.setRGB(.29*(.15+.85*HL),.33*(.15+.85*HL),.36*(.15+.85*HL));
+    lampMat.color.setRGB(.88*(.04+1.3*HL),.94*(.04+1.3*HL),1.0*(.04+1.3*HL));
+    var fH=LV.flH;
+    trimMat.color.setRGB(mix(0,FLUOR.r,fH)*HLL*1.2,mix(.95,FLUOR.g,fH)*HLL*1.2,mix(1,FLUOR.b,fH)*HLL*1.2);
+    wallRingMat.color.setHex(CYAN).lerp(FLUOR,fH);
+    scene.fog.density=.026-.012*HL;
+    scene.fog.color.setRGB(.016+.1*HL,.031+.12*HL,.05+.13*HL);
+    scene.background.copy(scene.fog.color);
+    renderer.toneMappingExposure=LV.expo;
+    trackMat.opacity=.35*Math.max(LV.amb,HLL);
+    var pulse=.82+.18*Math.sin(t*2.2), pl0=LV.plat, pL=LV.platL;
+    var fP=LV.flP;
+    ledMat.color.setRGB(mix(0,FLUOR.r,fP)*pulse*1.3*pL,mix(.95,FLUOR.g,fP)*pulse*1.3*pL,mix(1,FLUOR.b,fP)*pulse*1.3*pL);
+    ledSoft.color.setRGB(mix(.62,FLUOR.r,fP)*pulse*1.2*pL,mix(.97,FLUOR.g,fP)*pulse*1.2*pL,mix(1,FLUOR.b,fP)*pulse*1.2*pL);
+    padMat.color.setRGB(mix(.6,FLUOR.r,fP)*pulse*1.4*pL,mix(.93,FLUOR.g,fP)*pulse*1.4*pL,mix(1,FLUOR.b,fP)*pulse*1.4*pL);
+    var pS=LV.panelL, fS=LV.flS, pn0=LV.panel;
+    padMat2.color.setRGB(mix(.6,FLUOR.r,fS)*pulse*1.4*pS,mix(.93,FLUOR.g,fS)*pulse*1.4*pS,mix(1,FLUOR.b,fS)*pulse*1.4*pS);
+    haloMat.opacity=(.65+.2*Math.sin(t*2.2))*pl0;
+    floorHaloMat.opacity=.45*pl0;
+    LV.holo+=((modePlat===STAGES.length-1?0:1)-LV.holo)*lk;   // 全息環只有「明亮」與「關閉」兩種狀態
+    // 呼吸燈：亮度在 45%～100% 之間緩慢起伏（週期約 3.5 秒），三個環相位依序延遲
+    holo.children.forEach(function(r,ri){
+      var br=.45+.55*(.5+.5*Math.sin(t*1.8-ri*.9));
+      r.material.opacity=.35*.7*LV.holo*br*1.35;               // .245＝明亮模式原亮度；乘 1.35 讓呼吸峰值略高於原亮度
+    });
+    pLight.intensity=(1.9+.6*Math.sin(t*2.2))*pl0;
+    upSpot.intensity=(4.2+.8*Math.sin(t*2.2+1))*pl0;
+    beamMat.uniforms.uOp.value=(.8+.1*Math.sin(t*2.2+1))*.9*pl0;   // LED 環光錐（再淡 10%，×0.9）
+    panelBeamMat.uniforms.uOp.value=(.7+.1*Math.sin(t*2.2+2))*.8*pn0;   // 斜角面板光錐（已降低 20%）
+    for(var psi=0;psi<panelSpots.length;psi++) panelSpots[psi].intensity=(2.6+.5*Math.sin(t*2.2+2))*pn0;
+    wellMat.opacity=(.8+.15*Math.sin(t*2.2))*pl0;
+    poolMat.opacity=(.4+.1*Math.sin(t*2.2+1))*pl0;
+    bdMat.opacity=.8*pl0;
+    for(var bj=0;bj<BD;bj++){
+      bdp[bj*3+1]+=dt*(.5+(bj%5)*.12);
+      if(bdp[bj*3+1]>4.3) resetBd(bj,true);
+    }
+    bdGeo.attributes.position.needsUpdate=true;
+    holo.children.forEach(function(r){r.rotation.z+=r.userData.sp*dt;});
+    holo.rotation.y+=dt*.3;
+    wallRingMat.opacity=(.4+.15*Math.sin(t*1.3))*HLL;
+
+    // 展示櫃
+    for(var i=0;i<pods.length;i++){
+      var p=pods[i];
+      // 環繞時避免被展示櫃擋住：位於「鏡頭與中央平台之間」視線錐內的展示櫃會往地面下沉隱藏，移開後再升起
+      p.group.getWorldPosition(pw);
+      var vx=pw.x-camera.position.x, vz=pw.z-camera.position.z, ccx=-camera.position.x, ccz=-camera.position.z;
+      var dp=Math.hypot(vx,vz), dc=Math.hypot(ccx,ccz);
+      var cosA=(vx*ccx+vz*ccz)/(dp*dc+1e-6), blocking=(i!==focus && ((dp<dc+1.0 && cosA>.85) || dp<4.2));   // 偏離視線約 31° 以內
+      p.vis+=((blocking?0:1)-p.vis)*Math.min(1,dt*6);
+      p.group.scale.y=Math.max(.001,p.vis);
+      var tf=i===focus?1:0, th=i===hoverIdx?1:0;
+      p.focus+=(tf-p.focus)*Math.min(1,dt*4);
+      p.hover+=(th-p.hover)*Math.min(1,dt*6);
+      var pl=.88+.12*Math.sin(t*1.8+p.phase);
+      var boost=1+p.focus*.7+p.hover*.35, m=LV.pod, mL=LV.podL;
+      c1.copy(stripBase).lerp(FLUOR,LV.flD).multiplyScalar(pl*boost*(.85+.35)*mL);
+      p.stripMat.color.copy(c1);
+      p.topMat.color.set(0xeaffff).multiplyScalar(m);
+      p.backMat.emissiveIntensity=.7*m;
+      p.plateMat.opacity=.55*m;
+      if(p.spot) p.spot.intensity=(2.3+.3*Math.sin(t*1.4+p.phase))*(1+p.focus*.8+p.hover*.4)*m*p.vis;
+      p.coneMat.opacity=(.045+.03*p.focus+.02*p.hover)*m;
+      for(var g=0;g<p.glows.length;g++) p.glows[g].material.opacity=(.4+.12*Math.sin(t*1.8+p.phase))*(1+p.focus*.5)*mL;
+    }
+
+    // 微塵
+    var pa=dgeo.attributes.position.array;
+    for(var d=0;d<DN;d++){
+      pa[d*3+1]+=dt*.12; pa[d*3]+=Math.sin(t*.3+d)*dt*.03;
+      if(pa[d*3+1]>11) pa[d*3+1]=0;
+    }
+    dgeo.attributes.position.needsUpdate=true;
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(tick);
+  }
+  tick();
+  setTimeout(function(){document.getElementById("loading").classList.add("off");},400);
+})();
+</script>
+</body>
+</html>
